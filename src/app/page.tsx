@@ -22,6 +22,12 @@ interface CarouselItem {
   media_url: string;
 }
 
+interface Comment {
+  id: string;
+  text: string;
+  timestamp: string;
+}
+
 interface MediaItem {
   id: string;
   caption?: string;
@@ -30,6 +36,7 @@ interface MediaItem {
   timestamp?: string;
   like_count: number;
   comments_count: number;
+  comments?: Comment[];
   children?: {
     data: CarouselItem[];
   };
@@ -58,9 +65,8 @@ export default function Home() {
   const [mediaData, setMediaData] = useState<MediaItem[]>([]);
   const [accountInsights, setAccountInsights] =
     useState<AccountInsights | null>(null);
-  const [currentSlides, setCurrentSlides] = useState<Record<string, number>>(
-    {}
-  );
+  const [currentSlides, setCurrentSlides] = useState<Record<string, number>>({});
+  
   const INSTAGRAM_APP_ID = process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID;
   const REDIRECT_URI = "https://localhost:3001/";
 
@@ -108,11 +114,7 @@ export default function Home() {
 
         fetchUserData(longLivedToken);
         console.log(longLivedToken);
-        window.history.replaceState(
-          {},
-          document.title,
-          window.location.pathname
-        );
+        window.history.replaceState({}, document.title, window.location.pathname);
       } else {
         console.error("No access token received:", data);
         localStorage.removeItem("instagram_token");
@@ -139,6 +141,90 @@ export default function Home() {
     } catch (error) {
       console.error("Error getting long-lived token:", error);
       return shortLivedToken;
+    }
+  };
+
+  const fetchMediaInsights = async (userId: string, accessToken: string) => {
+    try {
+      // First fetch media list
+      const mediaResponse = await fetch(
+        `https://graph.instagram.com/me/media?fields=id,caption,media_type,media_url,timestamp,children{media_type,media_url}&access_token=${accessToken}`
+      );
+      const mediaList = await mediaResponse.json();
+      console.log("Initial media list:", mediaList); // Debug log
+  
+      if (!mediaList.data) {
+        throw new Error("No media data found");
+      }
+  
+      // Log each media ID we're about to process
+      mediaList.data.forEach((media: any) => {
+        console.log("Found media with ID:", media.id);
+      });
+  
+      const detailedMediaData = await Promise.all(
+        mediaList.data.map(async (media: any) => {
+          try {
+            console.log(`Starting to fetch details for media ID: ${media.id}`); // Debug log
+  
+            // Fetch media details
+            const mediaDetailsResponse = await fetch(
+              `https://graph.instagram.com/${media.id}?fields=id,media_type,media_url,like_count,comments_count,timestamp,children{media_type,media_url}&access_token=${accessToken}`
+            );
+            const mediaDetails = await mediaDetailsResponse.json();
+            console.log(`Media details for ID ${media.id}:`, mediaDetails); // Debug log
+  
+            // Fetch comments with fields parameter
+            const commentsUrl = `https://graph.instagram.com/v21.0/${media.id}/comments?access_token=${accessToken}`; 
+            console.log(`Fetching comments with URL: ${commentsUrl}`); // Debug log
+            
+            const commentsResponse = await fetch(commentsUrl);
+            const commentsData = await commentsResponse.json();
+            console.log(`Comments data for media ID ${media.id}:`, commentsData); // Debug log
+  
+            // Fetch insights
+            let insightsData = {};
+            try {
+              const insightsUrl = `https://graph.instagram.com/${media.id}/insights?metric=impressions,reach,shares,saved&access_token=${accessToken}`;
+              console.log(`Fetching insights with URL: ${insightsUrl}`); // Debug log
+              
+              const insightsResponse = await fetch(insightsUrl);
+              insightsData = await insightsResponse.json();
+              console.log(`Insights data for media ID ${media.id}:`, insightsData); // Debug log
+            } catch (insightError) {
+              console.error(`Error fetching insights for media ID ${media.id}:`, insightError);
+            }
+  
+            // Combine all data
+            const combinedData = {
+              ...mediaDetails,
+              caption: media.caption,
+              insights: insightsData,
+              comments: commentsData.data || []
+            };
+  
+            console.log(`Final combined data for media ID ${media.id}:`, combinedData); // Debug log
+            return combinedData;
+  
+          } catch (error) {
+            console.error(`Error processing media ${media.id}:`, error);
+            return {
+              id: media.id,
+              caption: media.caption,
+              media_type: "unknown",
+              timestamp: new Date().toISOString(),
+              like_count: 0,
+              comments_count: 0,
+              comments: []
+            };
+          }
+        })
+      );
+  
+      console.log("All detailed media data:", detailedMediaData); // Debug log
+      setMediaData(detailedMediaData);
+    } catch (error) {
+      console.error("Error in main fetch:", error);
     }
   };
 
@@ -179,76 +265,8 @@ export default function Home() {
     });
   };
 
-  const fetchMediaInsights = async (userId: string, accessToken: string) => {
-    try {
-      // First fetch media IDs and basic info
-      const mediaResponse = await fetch(
-        `https://graph.instagram.com/me/media?fields=id,caption,media_type,media_url,timestamp,children{media_type,media_url}&access_token=${accessToken}`
-      );
-      const mediaList = await mediaResponse.json();
-
-      if (!mediaList.data) {
-        throw new Error("No media data found");
-      }
-
-      // Initialize carousel positions for all media items
-      const initialSlides: Record<string, number> = {};
-      mediaList.data.forEach((media: MediaItem) => {
-        initialSlides[media.id] = 0;
-      });
-      setCurrentSlides(initialSlides);
-
-      // For each media item, fetch detailed data and insights
-      const detailedMediaData = await Promise.all(
-        mediaList.data.map(async (media: any) => {
-          try {
-            // Fetch detailed media data
-            const mediaDetailsResponse = await fetch(
-              `https://graph.instagram.com/${media.id}?fields=id,media_type,media_url,like_count,comments_count,timestamp,children{media_type,media_url}&access_token=${accessToken}`
-            );
-            const mediaDetails = await mediaDetailsResponse.json();
-
-            // Fetch insights for this media
-            const insightsResponse = await fetch(
-              `https://graph.instagram.com/${
-                media.id
-              }/insights?metric=engagement,impressions,reach,saved${
-                mediaDetails.media_type === "VIDEO" ? ",video_views" : ""
-              }&access_token=${accessToken}`
-            );
-            const insightsData = await insightsResponse.json();
-
-            return {
-              ...mediaDetails,
-              caption: media.caption,
-              insights: insightsData,
-            };
-          } catch (error) {
-            console.error(
-              `Error fetching details for media ${media.id}:`,
-              error
-            );
-            return {
-              id: media.id,
-              caption: media.caption,
-              media_type: "unknown",
-              timestamp: new Date().toISOString(),
-              like_count: 0,
-              comments_count: 0,
-            };
-          }
-        })
-      );
-
-      setMediaData(detailedMediaData);
-    } catch (error) {
-      console.error("Error fetching media insights:", error);
-    }
-  };
-
   const fetchAccountInsights = async (userId: string, accessToken: string) => {
     try {
-      // Get recent media first
       const mediaResponse = await fetch(
         `https://graph.instagram.com/me/media?fields=id,like_count,comments_count&access_token=${accessToken}`
       );
@@ -265,13 +283,11 @@ export default function Home() {
         });
       }
 
-      // Set insights based on available data
       const processedInsights: AccountInsights = {
         profile_views: 0,
-        reach: totalLikes + totalComments, // Approximation
-        impressions: totalLikes * 3, // Rough estimate
-        total_interactions:
-          totalLikes + totalComments + (totalLikes * 3 + totalComments * 3),
+        reach: totalLikes + totalComments,
+        impressions: totalLikes * 3,
+        total_interactions: totalLikes + totalComments + (totalLikes * 3 + totalComments * 3),
         website_clicks: 0,
         accounts_engaged: 0,
       };
@@ -335,27 +351,19 @@ export default function Home() {
                     className="w-24 h-24 rounded-full"
                   />
                   <div>
-                    <h2 className="text-2xl font-bold mb-2">
-                      @{userData.username}
-                    </h2>
+                    <h2 className="text-2xl font-bold mb-2">@{userData.username}</h2>
                     <div className="grid grid-cols-3 gap-6">
                       <div>
                         <p className="text-gray-600">Followers</p>
-                        <p className="text-xl font-bold">
-                          {userData.followers_count}
-                        </p>
+                        <p className="text-xl font-bold">{userData.followers_count}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">Following</p>
-                        <p className="text-xl font-bold">
-                          {userData.follows_count}
-                        </p>
+                        <p className="text-xl font-bold">{userData.follows_count}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">Posts</p>
-                        <p className="text-xl font-bold">
-                          {userData.media_count}
-                        </p>
+                        <p className="text-xl font-bold">{userData.media_count}</p>
                       </div>
                     </div>
                   </div>
@@ -558,9 +566,48 @@ export default function Home() {
                         </div>
                       </div>
 
+                      {/* Comments Section */}
+                      {/* Comments Section */}
+{media.comments && Array.isArray(media.comments) && media.comments.length > 0 ? (
+  <div className="mt-4 border-t pt-4">
+    <h4 className="text-lg font-semibold mb-3">
+      Comments ({media.comments.length})
+    </h4>
+    <div className="space-y-3 max-h-48 overflow-y-auto">
+      {media.comments.map((comment) => (
+        <div
+          key={comment.id}
+          className="bg-gray-50 p-3 rounded-lg shadow-sm"
+        >
+          {/* {comment.username && (
+            <p className="text-sm font-semibold text-gray-700 mb-1">
+              @{comment.username}
+            </p>
+          )} */}
+          <p className="text-gray-800 text-sm">{comment.text}</p>
+          <div className="flex justify-between items-center mt-2">
+            <p className="text-xs text-gray-500">
+              {formatDate(comment.timestamp)}
+            </p>
+            {/* {comment.like_count > 0 && (
+              <p className="text-xs text-gray-500">
+                {comment.like_count} likes
+              </p>
+            )} */}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+) : (
+  <div className="mt-4 border-t pt-4">
+    <p className="text-gray-500 text-sm">No comments yet</p>
+  </div>
+)}
+
                       {/* Insights */}
                       {media.insights?.data && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-4 mt-6">
                           <div>
                             <p className="text-gray-600">Engagement</p>
                             <p className="text-lg font-bold">
