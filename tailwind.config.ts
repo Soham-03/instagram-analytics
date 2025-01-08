@@ -64,7 +64,9 @@ export default {
   		animation: {
   			rainbow: 'rainbow var(--speed, 2s) infinite linear',
   			'shimmer-slide': 'shimmer-slide var(--speed) ease-in-out infinite alternate',
-  			'spin-around': 'spin-around calc(var(--speed) * 2) infinite linear'
+  			'spin-around': 'spin-around calc(var(--speed) * 2) infinite linear',
+			'spin-slow': 'spin-slow 3s linear infinite',
+        'float': 'float 6s ease-in-out infinite',
   		},
   		keyframes: {
   			rainbow: {
@@ -93,7 +95,15 @@ export default {
   				'100%': {
   					transform: 'translateZ(0) rotate(360deg)'
   				}
-  			}
+  			},
+			'spin-slow': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        'float': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-20px)' },
+        },
   		}
   	}
   },
