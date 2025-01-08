@@ -2134,21 +2134,63 @@ export default function Home() {
   const [contentAnalysis, setContentAnalysis] = useState<ContentAnalysis | null>(null);
   const [trendAnalysis, setTrendAnalysis] = useState<TrendAnalysis | null>(null);
   const [useDummyData, setUseDummyData] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const INSTAGRAM_APP_ID = process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID;
   const REDIRECT_URI = "https://localhost:3001/";
 
   // Basic Functions
   const loginWithInstagram = () => {
-    // For demo purposes, we'll use dummy data if Instagram auth fails
-    if (process.env.NODE_ENV === 'development' || !INSTAGRAM_APP_ID) {
+    if (!INSTAGRAM_APP_ID) {
+      console.error("Instagram App ID not configured");
+      alert("Instagram integration is not configured. Would you like to try the demo version?");
       setUseDummyData(true);
       loadDummyData();
       return;
     }
 
+    setIsLoading(true);
+    
+    // Construct the auth URL
     const authUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${INSTAGRAM_APP_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments%2Cinstagram_business_content_publish`;
+    
+    // Open Instagram auth in same window
     window.location.href = authUrl;
+  };
+
+  const exchangeCodeForToken = async (code: string) => {
+    try {
+      setIsLoading(true);
+      const response = await fetch("/api/auth/instagram", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code,
+          redirect_uri: REDIRECT_URI,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.access_token) {
+        const longLivedToken = await getLongLivedToken(data.access_token);
+        localStorage.setItem("instagram_token", longLivedToken);
+        setIsLoggedIn(true);
+        fetchUserData(longLivedToken);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else {
+        throw new Error("No access token received");
+      }
+    } catch (error) {
+      console.error("Authentication failed:", error);
+      alert("Instagram login failed. Would you like to try the demo version instead?");
+      setUseDummyData(true);
+      loadDummyData();
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const loadDummyData = () => {
@@ -2221,38 +2263,38 @@ export default function Home() {
     }
   }, []);
 
-  const exchangeCodeForToken = async (code: string) => {
-    try {
-      const response = await fetch("/api/auth/instagram", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          code,
-          redirect_uri: REDIRECT_URI,
-        }),
-      });
+  // const exchangeCodeForToken = async (code: string) => {
+  //   try {
+  //     const response = await fetch("/api/auth/instagram", {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //       },
+  //       body: JSON.stringify({
+  //         code,
+  //         redirect_uri: REDIRECT_URI,
+  //       }),
+  //     });
 
-      const data = await response.json();
+  //     const data = await response.json();
 
-      if (data.access_token) {
-        const longLivedToken = await getLongLivedToken(data.access_token);
-        localStorage.setItem("instagram_token", longLivedToken);
-        setIsLoggedIn(true);
-        fetchUserData(longLivedToken);
-        window.history.replaceState({}, document.title, window.location.pathname);
-      } else {
-        console.error("No access token received, falling back to dummy data");
-        setUseDummyData(true);
-        loadDummyData();
-      }
-    } catch (error) {
-      console.error("Error exchanging code for token, falling back to dummy data:", error);
-      setUseDummyData(true);
-      loadDummyData();
-    }
-  };
+  //     if (data.access_token) {
+  //       const longLivedToken = await getLongLivedToken(data.access_token);
+  //       localStorage.setItem("instagram_token", longLivedToken);
+  //       setIsLoggedIn(true);
+  //       fetchUserData(longLivedToken);
+  //       window.history.replaceState({}, document.title, window.location.pathname);
+  //     } else {
+  //       console.error("No access token received, falling back to dummy data");
+  //       setUseDummyData(true);
+  //       loadDummyData();
+  //     }
+  //   } catch (error) {
+  //     console.error("Error exchanging code for token, falling back to dummy data:", error);
+  //     setUseDummyData(true);
+  //     loadDummyData();
+  //   }
+  // };
 
   const getLongLivedToken = async (shortLivedToken: string) => {
     try {
@@ -2627,18 +2669,36 @@ export default function Home() {
         </div>
         <h1 className="text-4xl font-bold text-white">Instagram Analytics Dashboard</h1>
         <p className="text-xl text-white/80">Advanced analytics and content insights for your Instagram</p>
-        <button
-          onClick={loginWithInstagram}
-          className="bg-white text-purple-600 px-8 py-3 rounded-full font-medium text-lg
-                   hover:bg-purple-50 transition-all duration-300 flex items-center gap-2
-                   hover:scale-105 transform"
-        >
-          <Instagram size={20} />
-          {useDummyData ? "Explore Demo Data" : "Login with Instagram"}
-        </button>
+        {isLoading ? (
+          <div className="bg-white/20 text-white px-8 py-3 rounded-full font-medium text-lg flex items-center gap-2">
+            <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+            Connecting...
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <button
+              onClick={loginWithInstagram}
+              className="bg-white text-purple-600 px-8 py-3 rounded-full font-medium text-lg
+                       hover:bg-purple-50 transition-all duration-300 flex items-center gap-2
+                       hover:scale-105 transform"
+            >
+              <Instagram size={20} />
+              Login with Instagram
+            </button>
+            <button
+              onClick={() => {
+                setUseDummyData(true);
+                loadDummyData();
+              }}
+              className="text-white/80 hover:text-white text-sm transition-colors duration-300"
+            >
+              Try Demo Version Instead
+            </button>
+          </div>
+        )}
       </div>
       
-      {/* Animated background */}
+      {/* Animated background remains the same */}
       <div className="absolute top-0 left-0 w-full h-full -z-0">
         {[...Array(5)].map((_, i) => (
           <div
