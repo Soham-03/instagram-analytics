@@ -2680,7 +2680,7 @@ export default function Home() {
               onClick={loginWithInstagram}
               className="bg-white text-purple-600 px-8 py-3 rounded-full font-medium text-lg
                        hover:bg-purple-50 transition-all duration-300 flex items-center gap-2
-                       hover:scale-105 transform"
+                       hover:scale-105 transform text-center mx-auto"
             >
               <Instagram size={20} />
               Login with Instagram
