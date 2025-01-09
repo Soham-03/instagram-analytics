@@ -1879,9 +1879,10 @@ import {
   Hash,
   MessageCircle,
   Heart,
-  Eye
+  Eye,
+  Bot
 } from "lucide-react";
-
+import Link from 'next/link'
 // Interfaces
 interface InstagramAuthResponse {
   access_token: string;
@@ -2749,6 +2750,18 @@ export default function Home() {
               <BarChart2 size={20} />
               Analytics & Insights
             </button>
+            <Link href="/chat-app">
+            <button
+              
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                        ${activeView === 'chat-bot' 
+                          ? 'bg-purple-100 text-purple-600' 
+                          : 'hover:bg-gray-100'}`}
+            >
+              <Bot size={20} />
+              chat-bot
+            </button>
+            </Link>
 
             <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-100">
               <p className="text-sm text-gray-600 italic">
