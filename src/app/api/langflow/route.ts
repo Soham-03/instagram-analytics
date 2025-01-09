@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
-const LANGFLOW_BASE_URL = 'https://api.langflow.astra.datastax.com';
-const APPLICATION_TOKEN = 'AstraCS:mCLZZzxiUSgKAPHFDEFZBWnI:58e6a1b2cfb99157dae4a36d9ce0791caf4e91b5d96ef7b5d9d3f2787e2dea6a';
+// Environment variables should be properly typed
+interface Env {
+  LANGFLOW_BASE_URL: string;
+  LANGFLOW_API_TOKEN: string;
+}
+
+// Ensure environment variables are available
+const env = {
+  LANGFLOW_BASE_URL: process.env.LANGFLOW_BASE_URL || 'https://api.langflow.astra.datastax.com',
+  LANGFLOW_API_TOKEN: process.env.LANGFLOW_API_TOKEN
+};
+
+// Validate environment variables
+if (!env.LANGFLOW_API_TOKEN) {
+  throw new Error('LANGFLOW_API_TOKEN environment variable is required');
+}
 
 interface LangflowRequest {
   flowId: string;
@@ -14,36 +28,49 @@ interface LangflowRequest {
   stream: boolean;
 }
 
+interface LangflowMessage {
+  text: string;
+}
+
+interface LangflowOutput {
+  outputs: {
+    message: {
+      message: LangflowMessage;
+    };
+  };
+  artifacts?: {
+    stream_url?: string;
+  };
+}
+
 interface LangflowResponse {
   outputs: Array<{
-    outputs: Array<{
-      outputs: {
-        message: {
-          message: {
-            text: string;
-          };
-        };
-      };
-      artifacts?: {
-        stream_url?: string;
-      };
-    }>;
+    outputs: LangflowOutput[];
   }>;
 }
 
 // Create a typed axios instance
 const api: AxiosInstance = axios.create({
-  baseURL: LANGFLOW_BASE_URL,
+  baseURL: env.LANGFLOW_BASE_URL,
   headers: {
-    'Authorization': `Bearer ${APPLICATION_TOKEN}`,
+    'Authorization': `Bearer ${env.LANGFLOW_API_TOKEN}`,
     'Content-Type': 'application/json',
-  }
+  },
+  timeout: 30000, // 30 second timeout
 });
 
 export async function POST(request: NextRequest) {
   try {
-    const body: LangflowRequest = await request.json();
+    const body = await request.json() as LangflowRequest;
     const { flowId, langflowId, inputValue, inputType, outputType, tweaks, stream } = body;
+
+    // Validate required fields
+    if (!flowId || !langflowId || !inputValue) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
 
     const endpoint = `/lf/${langflowId}/api/v1/run/${flowId}?stream=${stream}`;
     
@@ -57,13 +84,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response.data);
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      console.error('API Error:', error.response?.data || error.message);
+      const axiosError = error as AxiosError;
+      console.error('API Error:', axiosError.response?.data || axiosError.message);
+      
+      // Handle specific error cases
+      if (axiosError.code === 'ECONNREFUSED') {
+        return NextResponse.json(
+          { error: 'Unable to connect to Langflow API' },
+          { status: 503 }
+        );
+      }
+
+      if (axiosError.response?.status === 401) {
+        return NextResponse.json(
+          { error: 'Invalid API token' },
+          { status: 401 }
+        );
+      }
+
       return NextResponse.json(
         { 
           error: 'Failed to process request',
-          details: error.response?.data || error.message 
+          details: axiosError.response?.data || axiosError.message 
         },
-        { status: error.response?.status || 500 }
+        { status: axiosError.response?.status || 500 }
       );
     }
 
