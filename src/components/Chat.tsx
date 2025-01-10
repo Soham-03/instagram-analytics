@@ -269,9 +269,9 @@ export default function Chat(): React.ReactElement {
         'chat',
         tweaks,
         false,
-        (data) => console.log("Received:", data.chunk),
-        (message) => console.log("Stream Closed:", message),
-        (error) => {
+        (data: { chunk: string }) => console.log("Received:", data.chunk),
+        (message: string) => console.log("Stream Closed:", message),
+        (error: Error) => {
           console.error("Stream Error:", error);
           setError('Error processing stream data');
         }
