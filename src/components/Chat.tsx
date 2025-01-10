@@ -180,7 +180,7 @@ const DataVisualizationPanel = ({ data, type }: { data: DataPoint[]; type: 'bar'
   );
 };
 
-export default function Chat(): JSX.Element {
+export default function Chat(): React.ReactElement {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
