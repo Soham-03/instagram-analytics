@@ -296,7 +296,7 @@ export default function Chat(): React.ReactElement {
       } else {
         throw new Error('Invalid response format');
       }
-    } catch (error) {
+    } catch (error: Error | any) {
       if (error.name === 'AbortError') {
         console.log('Request aborted');
         return;
