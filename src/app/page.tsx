@@ -1385,7 +1385,7 @@ export default function Home() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleNextSlide(selectedPost.id, selectedPost.children.data.length);
+                            handleNextSlide(selectedPost.id, selectedPost.children?.data.length || 0);
                           }}
                           className={`absolute right-2 top-1/2 transform -translate-y-1/2 
                                     bg-white/20 hover:bg-white/40 text-white p-2 rounded-full z-10
