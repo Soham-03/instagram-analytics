@@ -1299,7 +1299,7 @@ export default function Home() {
                   {media.timestamp && formatDate(media.timestamp)}
                 </p>
                 <div className="flex items-center gap-1">
-                  {media.hashtags?.length > 0 && (
+                {media.hashtags && media.hashtags.length > 0 && (
                     <span className="bg-purple-100 text-purple-600 text-xs px-2 py-1 rounded-full">
                       {media.hashtags.length} tags
                     </span>
