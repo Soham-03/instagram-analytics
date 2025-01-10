@@ -23,7 +23,8 @@ import {
   Eye,
   Bot
 } from "lucide-react";
-import Link from 'next/link'
+import Link from 'next/link';
+
 // Interfaces
 interface InstagramAuthResponse {
   access_token: string;
@@ -215,13 +216,17 @@ const extractMentions = (text: string): string[] => {
   return text?.match(mentionRegex) || [];
 };
 
-
 const getPostHour = (timestamp: string): number => {
   return new Date(timestamp).getHours();
 };
 
 const getPostWeekday = (timestamp: string): string => {
   return new Date(timestamp).toLocaleDateString('en-US', { weekday: 'long' });
+};
+
+const calculateEngagementRate = (likes: number, comments: number, followers: number): number => {
+  if (!followers) return 0;
+  return ((likes + comments) / followers) * 100;
 };
 
 const calculateBestTimeToPost = (
@@ -293,46 +298,8 @@ export default function Home() {
 
     setIsLoading(true);
     
-    // Construct the auth URL
     const authUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${INSTAGRAM_APP_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments%2Cinstagram_business_content_publish`;
-    
-    // Open Instagram auth in same window
     window.location.href = authUrl;
-  };
-
-  const exchangeCodeForToken = async (code: string) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/auth/instagram", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          code,
-          redirect_uri: REDIRECT_URI,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.access_token) {
-        const longLivedToken = await getLongLivedToken(data.access_token);
-        localStorage.setItem("instagram_token", longLivedToken);
-        setIsLoggedIn(true);
-        fetchUserData(longLivedToken);
-        window.history.replaceState({}, document.title, window.location.pathname);
-      } else {
-        throw new Error("No access token received");
-      }
-    } catch (error) {
-      console.error("Authentication failed:", error);
-      alert("Instagram login failed. Would you like to try the demo version instead?");
-      setUseDummyData(true);
-      loadDummyData();
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const loadDummyData = () => {
@@ -370,15 +337,13 @@ export default function Home() {
     setUseDummyData(false);
   };
 
-  const calculateEngagementRate = () => {
-    const totalPosts = MediaList.length;
-    if (totalPosts === 0) return 0;
+  const calculateAverageEngagementRate = () => {
+    if (mediaData.length === 0 || !userData?.followers_count) return 0;
     
     const totalEngagement = mediaData.reduce((sum, post) => 
       sum + post.like_count + post.comments_count, 0);
     
-    // Engagement rate = (Likes + Comments) / Number of Posts
-    return (totalEngagement / totalPosts).toFixed(1);
+    return calculateEngagementRate(totalEngagement, 0, userData.followers_count);
   };
 
   const formatDate = (timestamp: string) => {
@@ -391,52 +356,41 @@ export default function Home() {
     });
   };
 
-  useEffect(() => {
-    const savedToken = localStorage.getItem("instagram_token");
-    if (savedToken) {
-      setIsLoggedIn(true);
-      fetchUserData(savedToken);
-    } else {
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get("code");
-      if (code) {
-        exchangeCodeForToken(code);
+  // Authentication and Data Fetching
+  const exchangeCodeForToken = async (code: string) => {
+    try {
+      setIsLoading(true);
+      const response = await fetch("/api/auth/instagram", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code,
+          redirect_uri: REDIRECT_URI,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.access_token) {
+        const longLivedToken = await getLongLivedToken(data.access_token);
+        localStorage.setItem("instagram_token", longLivedToken);
+        setIsLoggedIn(true);
+        fetchUserData(longLivedToken);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else {
+        throw new Error("No access token received");
       }
+    } catch (error) {
+      console.error("Authentication failed:", error);
+      alert("Instagram login failed. Would you like to try the demo version instead?");
+      setUseDummyData(true);
+      loadDummyData();
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
-
-  // const exchangeCodeForToken = async (code: string) => {
-  //   try {
-  //     const response = await fetch("/api/auth/instagram", {
-  //       method: "POST",
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //       },
-  //       body: JSON.stringify({
-  //         code,
-  //         redirect_uri: REDIRECT_URI,
-  //       }),
-  //     });
-
-  //     const data = await response.json();
-
-  //     if (data.access_token) {
-  //       const longLivedToken = await getLongLivedToken(data.access_token);
-  //       localStorage.setItem("instagram_token", longLivedToken);
-  //       setIsLoggedIn(true);
-  //       fetchUserData(longLivedToken);
-  //       window.history.replaceState({}, document.title, window.location.pathname);
-  //     } else {
-  //       console.error("No access token received, falling back to dummy data");
-  //       setUseDummyData(true);
-  //       loadDummyData();
-  //     }
-  //   } catch (error) {
-  //     console.error("Error exchanging code for token, falling back to dummy data:", error);
-  //     setUseDummyData(true);
-  //     loadDummyData();
-  //   }
-  // };
+  };
 
   const getLongLivedToken = async (shortLivedToken: string) => {
     try {
@@ -454,6 +408,20 @@ export default function Home() {
       return shortLivedToken;
     }
   };
+
+  useEffect(() => {
+    const savedToken = localStorage.getItem("instagram_token");
+    if (savedToken) {
+      setIsLoggedIn(true);
+      fetchUserData(savedToken);
+    } else {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get("code");
+      if (code) {
+        exchangeCodeForToken(code);
+      }
+    }
+  }, []);
 
   const fetchUserData = async (accessToken: string) => {
     if (useDummyData) {
@@ -579,7 +547,6 @@ export default function Home() {
             return processedMedia;
           } catch (error) {
             console.error(`Error processing media ${media.id}:`, error);
-            // Return a dummy media item if processing fails
             return generateDummyMedia(1)[0];
           }
         })
@@ -587,7 +554,6 @@ export default function Home() {
 
       setMediaData(detailedMediaData);
 
-      // Run analytics
       if (userData?.followers_count) {
         analyzeContent(detailedMediaData, userData.followers_count);
         analyzeTrends(detailedMediaData);
@@ -731,13 +697,11 @@ export default function Home() {
   };
 
   const analyzeTrends = (posts: MediaItem[]) => {
-    // Sort posts by date
     const sortedPosts = [...posts].sort((a, b) => 
       new Date(a.timestamp || '').getTime() - new Date(b.timestamp || '').getTime()
     );
 
-    // Calculate growth rates
-    const periodsToAnalyze = 4; // Last 4 periods
+    const periodsToAnalyze = 4;
     const postsPerPeriod = Math.ceil(posts.length / periodsToAnalyze);
     
     const periods = Array.from({ length: periodsToAnalyze }, (_, i) => {
@@ -759,14 +723,12 @@ export default function Home() {
       };
     });
 
-    // Calculate period-over-period growth
     const latestPeriod = periods[periods.length - 1];
     const previousPeriod = periods[periods.length - 2];
     const growthRate = previousPeriod?.growth
       ? ((latestPeriod.growth - previousPeriod.growth) / previousPeriod.growth) * 100
       : 0;
 
-    // Analyze engagement by content type
     const engagementByType = posts.reduce((acc, post) => {
       const type = post.media_type;
       if (!acc[type]) acc[type] = 0;
@@ -774,7 +736,6 @@ export default function Home() {
       return acc;
     }, {} as Record<string, number>);
 
-    // Calculate content type preferences
     const typePreferences = Object.entries(engagementByType)
       .map(([type, engagement]) => ({
         type,
@@ -783,7 +744,6 @@ export default function Home() {
       }))
       .sort((a, b) => b.average - a.average);
 
-    // Generate insights and recommendations
     const recommendedActions = [
       `Focus on ${typePreferences[0].type.toLowerCase()} content which generates ${(typePreferences[0].average / (typePreferences[1]?.average || 1)).toFixed(1)}x more engagement`,
       "Increase posting frequency during peak engagement hours",
@@ -795,7 +755,7 @@ export default function Home() {
     setTrendAnalysis({
       growthRate,
       engagementTrend: latestPeriod.growth,
-      followersGrowth: Math.floor(growthRate * 0.7), // Estimate follower growth based on engagement growth
+      followersGrowth: Math.floor(growthRate * 0.7),
       topGrowthPeriods: periods,
       engagementByContentType: engagementByType,
       recommendedActions
@@ -840,7 +800,7 @@ export default function Home() {
         )}
       </div>
       
-      {/* Animated background remains the same */}
+      {/* Animated background */}
       <div className="absolute top-0 left-0 w-full h-full -z-0">
         {[...Array(5)].map((_, i) => (
           <div
@@ -859,6 +819,7 @@ export default function Home() {
     </div>
   );
 
+  // Dashboard Layout Component
   const DashboardLayout = () => (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
@@ -891,33 +852,32 @@ export default function Home() {
               <BarChart2 size={20} />
               Analytics & Insights
             </button>
+            
             <Link href="/chat-app">
-            <button
-              
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
-                        ${activeView === 'chat-bot' 
-                          ? 'bg-purple-100 text-purple-600' 
-                          : 'hover:bg-gray-100'}`}
-            >
-              <Bot size={20} />
-              chat-bot
-            </button>
+              <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                            ${activeView === 'chat-bot' 
+                              ? 'bg-purple-100 text-purple-600' 
+                              : 'hover:bg-gray-100'}`}
+              >
+                <Bot size={20} />
+                chat-bot
+              </button>
             </Link>
 
             <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-100">
               <p className="text-sm text-gray-600 italic">
-            📊 Data Source:{' '}
-              <span className="font-medium text-purple-600">
-              50% Instagram API
-              </span>
-              {' + '}
-              <span className="font-medium text-pink-600">
-              50% Our Imagination
-              </span>
+                📊 Data Source:{' '}
+                <span className="font-medium text-purple-600">
+                  50% Instagram API
+                </span>
+                {' + '}
+                <span className="font-medium text-pink-600">
+                  50% Our Imagination
+                </span>
               </p>
               <p className="text-xs text-gray-500 mt-2">
-              Because Instagram's API is like that friend who only tells half the story... 
-              We filled in the gaps with educated guesses! 🔮✨
+                Because Instagram's API is like that friend who only tells half the story... 
+                We filled in the gaps with educated guesses! 🔮✨
               </p>
             </div>
 
@@ -981,247 +941,6 @@ export default function Home() {
     </div>
   );
 
-  // AnalyticsView Component
-  // const AnalyticsView = () => {
-  //   const COLORS = ['#8B5CF6', '#EC4899', '#EF4444', '#F59E0B', '#10B981'];
-
-  //   return (
-  //     <div className="space-y-8">
-  //       {/* Overview Cards */}
-  //       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <div className="flex items-center gap-3 mb-4">
-  //             <TrendingUp className="text-purple-600" />
-  //             <h3 className="text-lg font-semibold text-gray-800">Growth Rate</h3>
-  //           </div>
-  //           <p className="text-3xl font-bold text-purple-600">
-  //             {trendAnalysis?.growthRate.toFixed(1)}%
-  //           </p>
-  //           <p className="text-sm text-gray-500 mt-2">vs last period</p>
-  //         </div>
-
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <div className="flex items-center gap-3 mb-4">
-  //             <Users className="text-pink-600" />
-  //             <h3 className="text-lg font-semibold text-gray-800">Engagement Rate</h3>
-  //           </div>
-  //           <p className="text-3xl font-bold text-pink-600">
-  //             {((accountInsights?.total_interactions || 0) / (userData?.followers_count || 1) * 100).toFixed(1)}%
-  //           </p>
-  //           <p className="text-sm text-gray-500 mt-2">average per post</p>
-  //         </div>
-
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <div className="flex items-center gap-3 mb-4">
-  //             <Heart className="text-red-600" />
-  //             <h3 className="text-lg font-semibold text-gray-800">Total Interactions</h3>
-  //           </div>
-  //           <p className="text-3xl font-bold text-red-600">
-  //             {accountInsights?.total_interactions.toLocaleString()}
-  //           </p>
-  //           <p className="text-sm text-gray-500 mt-2">likes and comments</p>
-  //         </div>
-
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <div className="flex items-center gap-3 mb-4">
-  //             <Eye className="text-orange-600" />
-  //             <h3 className="text-lg font-semibold text-gray-800">Total Reach</h3>
-  //           </div>
-  //           <p className="text-3xl font-bold text-orange-600">
-  //             {accountInsights?.reach.toLocaleString()}
-  //           </p>
-  //           <p className="text-sm text-gray-500 mt-2">unique viewers</p>
-  //         </div>
-  //       </div>
-
-  //       {/* Content Performance Analysis */}
-  //       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  //         {/* Post Timing Analysis */}
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <h3 className="text-lg font-semibold text-gray-800 mb-6">
-  //             Best Posting Times
-  //           </h3>
-  //           <div className="h-80">
-  //             <ResponsiveContainer width="100%" height="100%">
-  //               <AreaChart data={contentAnalysis?.postTimings || []}>
-  //                 <CartesianGrid strokeDasharray="3 3" />
-  //                 <XAxis 
-  //                   dataKey="hour" 
-  //                   tickFormatter={(hour) => `${hour}:00`}
-  //                 />
-  //                 <YAxis />
-  //                 <Tooltip 
-  //                   formatter={(value: number) => `${value.toFixed(2)}%`}
-  //                   labelFormatter={(hour) => `${hour}:00`}
-  //                 />
-  //                 <Area
-  //                   type="monotone"
-  //                   dataKey="engagement"
-  //                   stroke="#8B5CF6"
-  //                   fill="#8B5CF6"
-  //                   fillOpacity={0.3}
-  //                   name="Engagement Rate"
-  //                 />
-  //               </AreaChart>
-  //             </ResponsiveContainer>
-  //           </div>
-  //         </div>
-
-  //         {/* Weekday Performance */}
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <h3 className="text-lg font-semibold text-gray-800 mb-6">
-  //             Weekday Performance
-  //           </h3>
-  //           <div className="h-80">
-  //             <ResponsiveContainer width="100%" height="100%">
-  //               <BarChart data={contentAnalysis?.weekdayPerformance || []}>
-  //                 <CartesianGrid strokeDasharray="3 3" />
-  //                 <XAxis dataKey="day" />
-  //                 <YAxis />
-  //                 <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-  //                 <Bar dataKey="engagement" fill="#EC4899" name="Engagement Rate" />
-  //               </BarChart>
-  //             </ResponsiveContainer>
-  //           </div>
-  //         </div>
-  //       </div>
-
-  //       {/* Hashtag and Mention Analysis */}
-  //       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  //         {/* Top Hashtags */}
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <h3 className="text-lg font-semibold text-gray-800 mb-6">
-  //             Top Performing Hashtags
-  //           </h3>
-  //           <div className="space-y-4">
-  //             {contentAnalysis?.topHashtags.slice(0, 5).map((hashtag, index) => (
-  //               <div key={hashtag.tag} className="flex items-center justify-between">
-  //                 <div className="flex items-center gap-3">
-  //                   <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-  //                     <Hash size={16} className="text-purple-600" />
-  //                   </div>
-  //                   <span className="font-medium">{hashtag.tag}</span>
-  //                 </div>
-  //                 <div className="text-right">
-  //                   <p className="font-bold text-purple-600">
-  //                     {hashtag.engagement.toFixed(2)}%
-  //                   </p>
-  //                   <p className="text-sm text-gray-500">
-  //                     Used {hashtag.count} times
-  //                   </p>
-  //                 </div>
-  //               </div>
-  //             ))}
-  //           </div>
-  //         </div>
-
-  //         {/* Media Type Performance */}
-  //         <div className="bg-white rounded-xl shadow-lg p-6">
-  //           <h3 className="text-lg font-semibold text-gray-800 mb-6">
-  //             Content Type Performance
-  //           </h3>
-  //           <div className="h-80">
-  //             <ResponsiveContainer width="100%" height="100%">
-  //               <BarChart data={contentAnalysis?.bestPerformingTypes || []}>
-  //                 <CartesianGrid strokeDasharray="3 3" />
-  //                 <XAxis dataKey="type" />
-  //                 <YAxis />
-  //                 <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
-  //                 <Bar dataKey="engagement" fill="#8B5CF6" name="Engagement Rate">
-  //                   {(contentAnalysis?.bestPerformingTypes || []).map((entry, index) => (
-  //                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-  //                   ))}
-  //                 </Bar>
-  //               </BarChart>
-  //             </ResponsiveContainer>
-  //           </div>
-  //         </div>
-  //       </div>
-
-  //       {/* Growth Analysis */}
-  //       <div className="bg-white rounded-xl shadow-lg p-6">
-  //         <h3 className="text-lg font-semibold text-gray-800 mb-6">
-  //           Growth Analysis & Recommendations
-  //         </h3>
-  //         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  //           <div>
-  //             <h4 className="font-medium text-gray-800 mb-4">Growth Trends</h4>
-  //             <div className="h-64">
-  //               <ResponsiveContainer width="100%" height="100%">
-  //                 <LineChart data={trendAnalysis?.topGrowthPeriods || []}>
-  //                   <CartesianGrid strokeDasharray="3 3" />
-  //                   <XAxis dataKey="period" />
-  //                   <YAxis />
-  //                   <Tooltip />
-  //                   <Line 
-  //                     type="monotone" 
-  //                     dataKey="growth" 
-  //                     stroke="#8B5CF6" 
-  //                     strokeWidth={2}
-  //                     name="Engagement Growth"
-  //                   />
-  //                 </LineChart>
-  //               </ResponsiveContainer>
-  //             </div>
-  //           </div>
-            
-  //           {/* Recommendations */}
-  //           <div>
-  //             <h4 className="font-medium text-gray-800 mb-4">Recommended Actions</h4>
-  //             <div className="space-y-4">
-  //               {trendAnalysis?.recommendedActions.map((action, index) => (
-  //                 <div key={index} className="flex items-start gap-3">
-  //                   <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-  //                     <span className="text-sm text-purple-600 font-medium">{index + 1}</span>
-  //                   </div>
-  //                   <p className="text-gray-700">{action}</p>
-  //                 </div>
-  //               ))}
-  //             </div>
-  //           </div>
-  //         </div>
-  //       </div>
-
-  //       {/* Content Recommendations */}
-  //       <div className="bg-white rounded-xl shadow-lg p-6">
-  //         <h3 className="text-lg font-semibold text-gray-800 mb-6">
-  //           Content Strategy Recommendations
-  //         </h3>
-  //         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-  //           {contentAnalysis?.contentSuggestions.map((suggestion, index) => (
-  //             <div key={index} className="bg-purple-50 rounded-lg p-6 space-y-4">
-  //               <div className="flex items-center gap-3">
-  //                 <Binary className="text-purple-600" />
-  //                 <h4 className="font-semibold">Content Suggestion {index + 1}</h4>
-  //               </div>
-  //               <div>
-  //                 <p className="text-gray-700 mb-2">
-  //                   Focus on creating <span className="font-semibold">{suggestion.type}</span> content
-  //                 </p>
-  //                 <p className="text-sm text-gray-600 mb-4">{suggestion.reason}</p>
-  //                 <div className="space-y-2">
-  //                   <p className="text-sm font-medium">Recommended Hashtags:</p>
-  //                   <div className="flex flex-wrap gap-2">
-  //                     {suggestion.suggestedHashtags.map((tag) => (
-  //                       <span key={tag} className="bg-purple-100 text-purple-600 px-2 py-1 rounded-full text-sm">
-  //                         {tag}
-  //                       </span>
-  //                     ))}
-  //                   </div>
-  //                 </div>
-  //                 <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
-  //                   <Clock size={16} />
-  //                   Best time to post: {suggestion.bestTimeToPost}
-  //                 </div>
-  //               </div>
-  //             </div>
-  //           ))}
-  //         </div>
-  //       </div>
-  //     </div>
-  //   );
-  // };
-
   const AnalyticsView = () => {
     const COLORS = ['#8B5CF6', '#EC4899', '#EF4444', '#F59E0B', '#10B981'];
 
@@ -1251,7 +970,7 @@ export default function Home() {
       }));
     }, [mediaData]);
 
-    // Generate dummy time-based data
+    // Generate time-based data
     const timeData = useMemo(() => {
       return Array.from({ length: 24 }, (_, hour) => ({
         hour,
@@ -1259,7 +978,7 @@ export default function Home() {
       }));
     }, []);
 
-    // Generate dummy weekday data
+    // Generate weekday data
     const weekdayData = useMemo(() => {
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       return days.map(day => ({
@@ -1268,7 +987,7 @@ export default function Home() {
       }));
     }, []);
 
-    // Calculate total likes and comments for real data
+    // Calculate totals
     const totalLikes = mediaData.reduce((sum, post) => sum + post.like_count, 0);
     const totalComments = mediaData.reduce((sum, post) => sum + post.comments_count, 0);
     const totalEngagement = totalLikes + totalComments;
@@ -1469,7 +1188,6 @@ export default function Home() {
     );
   };
 
-  // AccountView Component
   const AccountView = () => (
     <div className="space-y-8">
       {/* User Profile */}
@@ -1793,6 +1511,161 @@ export default function Home() {
       ) : (
         <DashboardLayout />
       )}
+
+      <style jsx>{`
+        @keyframes shine {
+          from {
+            transform: translateX(-100%) skewX(45deg);
+          }
+          to {
+            transform: translateX(200%) skewX(45deg);
+          }
+        }
+
+        @keyframes gradient-x {
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
+        }
+
+        @keyframes blob {
+          0%,
+          100% {
+            transform: translate(0, 0) scale(1);
+          }
+          25% {
+            transform: translate(20px, -20px) scale(1.1);
+          }
+          50% {
+            transform: translate(-20px, 20px) scale(0.9);
+          }
+          75% {
+            transform: translate(20px, 20px) scale(1.1);
+          }
+        }
+
+        .animate-shine {
+          animation: shine 3s infinite;
+        }
+
+        .animate-shine-fast {
+          animation: shine 2s infinite;
+        }
+
+        .animate-gradient-x {
+          animation: gradient-x 15s linear infinite;
+        }
+
+        .animate-blob {
+          animation: blob 10s infinite;
+        }
+
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+
+        .animate-spin-slow {
+          animation: spin 6s linear infinite;
+        }
+
+        @keyframes float {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-20px);
+          }
+        }
+
+        .animate-float {
+          animation: float 6s ease-in-out infinite;
+        }
+
+        /* Custom scrollbar styles */
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: #c4b5fd;
+          border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: #8b5cf6;
+        }
+
+        /* Carousel transitions */
+        .carousel-item-enter {
+          opacity: 0;
+        }
+        
+        .carousel-item-enter-active {
+          opacity: 1;
+          transition: opacity 300ms ease-in;
+        }
+        
+        .carousel-item-exit {
+          opacity: 1;
+        }
+        
+        .carousel-item-exit-active {
+          opacity: 0;
+          transition: opacity 300ms ease-out;
+        }
+
+        /* Modal animations */
+        .modal-enter {
+          opacity: 0;
+          transform: scale(0.9);
+        }
+        
+        .modal-enter-active {
+          opacity: 1;
+          transform: scale(1);
+          transition: opacity 300ms, transform 300ms;
+        }
+        
+        .modal-exit {
+          opacity: 1;
+          transform: scale(1);
+        }
+        
+        .modal-exit-active {
+          opacity: 0;
+          transform: scale(0.9);
+          transition: opacity 300ms, transform 300ms;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+          .grid-cols-4 {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 640px) {
+          .grid-cols-4 {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </main>
   );
 }
