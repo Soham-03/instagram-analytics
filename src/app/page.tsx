@@ -272,7 +272,7 @@ const calculateBestTimeToPost = (
 export default function Home() {
   // State Management
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [activeView, setActiveView] = useState<'account' | 'analytics' | 'trends' | 'suggestions'>('account');
+  const [activeView, setActiveView] = useState<'account' | 'analytics' | 'trends' | 'suggestions'|'chat-bot'>('account');
   const [userData, setUserData] = useState<UserData | null>(null);
   const [mediaData, setMediaData] = useState<MediaItem[]>([]);
   const [accountInsights, setAccountInsights] = useState<AccountInsights | null>(null);
@@ -853,15 +853,12 @@ export default function Home() {
               Analytics & Insights
             </button>
             
-            <Link href="/chat-app">
-              <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
-                            ${activeView === 'chat-bot' 
-                              ? 'bg-purple-100 text-purple-600' 
-                              : 'hover:bg-gray-100'}`}
-              >
-                <Bot size={20} />
-                chat-bot
-              </button>
+            <Link 
+              href="/chat-app" 
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors hover:bg-gray-100"
+            >
+              <Bot size={20} />
+              Chat Bot
             </Link>
 
             <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-100">
