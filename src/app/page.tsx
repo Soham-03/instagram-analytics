@@ -284,7 +284,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
 
   const INSTAGRAM_APP_ID = process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID;
-  const REDIRECT_URI = "https://localhost:3001/";
+  const REDIRECT_URI = "http://instagram-analytics-nice-vibes.vercel.app/";
 
   // Basic Functions
   const loginWithInstagram = () => {
